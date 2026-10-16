@@ -1,14 +1,23 @@
-from .schemas import ExtractedDetails, Intent, LeadAnalysis
+from pydantic import ValidationError
+
+from .llm import call_llm
+from .prompts import SYSTEM_PROMPT
+from .schemas import LeadAnalysis
+
+MAX_ATTEMPTS = 2
+
 
 def analyze_lead(message: str) -> LeadAnalysis:
-  """Fake analyzer for now. the body becomes an LLM call later."""
-  return LeadAnalysis(
-    details=ExtractedDetails(),
-    intent=Intent.OTHER,
-    priority_score=50,
-    summary=message[:100],
-    suggested_reply="Thanks for reaching out! We'll get back to you soon.",
-    
-    
-    
-  )
+    user_message = message
+    last_error = None
+    for _ in range(MAX_ATTEMPTS):
+        raw = call_llm(SYSTEM_PROMPT, user_message)
+        try:
+            return LeadAnalysis.model_validate_json(raw)
+        except ValidationError as error:
+            last_error = error
+            user_message = (
+                f"{message}\n\nYour previous answer was invalid: {error}. "
+                "Return only valid JSON in the required shape."
+            )
+    raise ValueError(f"LLM output invalid after {MAX_ATTEMPTS} attempts: {last_error}")
